@@ -187,44 +187,14 @@ app.get('/api/status', (req, res) => {
 });
 
 // API: Get Instagram profile picture (proxy)
-const avatarCache = new Map();
-app.get('/api/avatar/:username', async (req, res) => {
+// Instagram blocks cloud IPs, so we use DiceBear avatars (deterministic & stylish)
+app.get('/api/avatar/:username', (req, res) => {
   const { username } = req.params;
   
-  // Check cache first (1 hour)
-  const cached = avatarCache.get(username);
-  if (cached && (Date.now() - cached.time) < 3600000) {
-    return res.redirect(cached.url);
-  }
-  
-  try {
-    // Use Instagram's private API (same as mobile app)
-    const response = await fetch(`https://i.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`, {
-      headers: {
-        'User-Agent': 'Instagram 275.0.0.27.98 Android (33/13; 420dpi; 1080x2400; Google/google; Pixel 7; panther; panther; en_US; 458229237)',
-        'X-IG-App-ID': '936619743392459',
-        'Accept': '*/*',
-      }
-    });
-    
-    if (response.ok) {
-      const data = await response.json();
-      const avatarUrl = data?.data?.user?.profile_pic_url_hd || data?.data?.user?.profile_pic_url;
-      
-      if (avatarUrl) {
-        // Decode unicode escapes
-        const decodedUrl = avatarUrl.replace(/\\u0026/g, '&');
-        avatarCache.set(username, { url: decodedUrl, time: Date.now() });
-        return res.redirect(decodedUrl);
-      }
-    }
-    
-    // Fallback: UI Avatars
-    res.redirect(`https://ui-avatars.com/api/?name=${username}&background=333&color=fff&size=64`);
-  } catch (err) {
-    // Fallback on error
-    res.redirect(`https://ui-avatars.com/api/?name=${username}&background=333&color=fff&size=64`);
-  }
+  // DiceBear "initials" style with Instagram gradient colors
+  // Same seed = same avatar every time
+  res.set('Cache-Control', 'public, max-age=604800'); // 1 week
+  res.redirect(`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(username)}&backgroundColor=c13584,e1306c,fd1d1d,f77737,fcaf45&backgroundType=gradientLinear&fontWeight=600`);
 });
 
 // Logout

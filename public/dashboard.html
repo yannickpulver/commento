@@ -6,9 +6,24 @@
   <title>Commento</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    .comment-card { transition: all 0.3s ease; }
+    .comment-card { transition: all 0.3s ease; position: relative; }
     .comment-card.replied { opacity: 0.5; transform: scale(0.98); }
     .comment-card.hidden { display: none; }
+    .comment-card.sending { opacity: 0.6; }
+    .comment-card.sending::after {
+      content: '⏳ Senden...';
+      position: absolute;
+      top: 50%;
+      right: 1rem;
+      transform: translateY(-50%);
+      font-size: 0.75rem;
+      color: #a3a3a3;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
   </style>
 </head>
 <body class="bg-neutral-950 text-white min-h-screen">
@@ -202,11 +217,17 @@
     
     async function sendReply(commentId) {
       const input = document.getElementById(`reply-${commentId}`);
+      const card = document.getElementById(`comment-${commentId}`);
       const message = input.value.trim();
       
       if (!message) return;
       
+      // Immediately show sending state and move to next
       input.disabled = true;
+      card.classList.add('sending');
+      
+      // Focus next input immediately
+      focusNextInput(card);
       
       try {
         const res = await fetch('/api/reply', {
@@ -218,43 +239,45 @@
         const data = await res.json();
         
         if (data.success) {
-          markDone(commentId, true);
+          markDone(commentId, false);
         } else {
-          alert('Fehler: ' + (data.error?.message || JSON.stringify(data.error) || 'Unbekannt'));
+          // Show error, restore card
+          card.classList.remove('sending');
           input.disabled = false;
+          input.focus();
+          alert('Fehler: ' + (data.error?.message || JSON.stringify(data.error) || 'Unbekannt'));
         }
       } catch (err) {
-        alert('Fehler: ' + err.message);
+        card.classList.remove('sending');
         input.disabled = false;
+        input.focus();
+        alert('Fehler: ' + err.message);
       }
     }
     
-    function markDone(commentId, focusNext = false) {
-      const card = document.getElementById(`comment-${commentId}`);
-      if (card) {
-        // Find next visible card's input before hiding this one
-        let nextInput = null;
-        if (focusNext) {
-          let sibling = card.nextElementSibling;
-          while (sibling) {
-            if (sibling.classList.contains('comment-card') && !sibling.classList.contains('hidden')) {
-              nextInput = sibling.querySelector('input[type="text"]');
-              break;
-            }
-            sibling = sibling.nextElementSibling;
+    function focusNextInput(currentCard) {
+      let sibling = currentCard.nextElementSibling;
+      while (sibling) {
+        if (sibling.classList.contains('comment-card') && !sibling.classList.contains('hidden') && !sibling.classList.contains('sending')) {
+          const nextInput = sibling.querySelector('input[type="text"]');
+          if (nextInput) {
+            nextInput.focus();
+            return;
           }
         }
-        
+        sibling = sibling.nextElementSibling;
+      }
+    }
+    
+    function markDone(commentId) {
+      const card = document.getElementById(`comment-${commentId}`);
+      if (card) {
+        card.classList.remove('sending');
         card.classList.add('replied');
         setTimeout(() => {
           card.classList.add('hidden');
           totalCount--;
           updateCount();
-          
-          // Focus next input
-          if (nextInput) {
-            nextInput.focus();
-          }
           
           // Check if all done
           if (totalCount === 0 && !nextCursor) {

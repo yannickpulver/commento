@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Instagram Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .comment-card { transition: all 0.3s ease; }
+    .comment-card.replied { opacity: 0.5; }
+    .comment-card.hidden { display: none; }
+  </style>
+</head>
+<body class="bg-neutral-950 text-white min-h-screen">
+  
+  <header class="border-b border-white/10 px-6 py-4 flex items-center justify-between">
+    <h1 class="text-xl font-medium">📸 Instagram Dashboard</h1>
+    <div class="flex items-center gap-4">
+      <button onclick="loadComments()" class="text-sm text-neutral-400 hover:text-white">🔄 Refresh</button>
+      <a href="/logout" class="text-sm text-neutral-400 hover:text-white">Logout</a>
+    </div>
+  </header>
+  
+  <main class="max-w-4xl mx-auto p-6">
+    <div id="loading" class="text-center py-12 text-neutral-400">
+      Lade Kommentare...
+    </div>
+    
+    <div id="empty" class="text-center py-12 text-neutral-400 hidden">
+      ✅ Keine unbeantworteten Kommentare!
+    </div>
+    
+    <div id="comments" class="space-y-4"></div>
+  </main>
+
+  <script>
+    async function loadComments() {
+      const loading = document.getElementById('loading');
+      const empty = document.getElementById('empty');
+      const container = document.getElementById('comments');
+      
+      loading.classList.remove('hidden');
+      empty.classList.add('hidden');
+      container.innerHTML = '';
+      
+      try {
+        const res = await fetch('/api/comments');
+        const data = await res.json();
+        
+        loading.classList.add('hidden');
+        
+        if (!data.posts || data.posts.length === 0) {
+          empty.classList.remove('hidden');
+          return;
+        }
+        
+        let totalComments = 0;
+        
+        for (const post of data.posts) {
+          for (const comment of post.unanswered_comments) {
+            totalComments++;
+            const card = createCommentCard(post, comment);
+            container.appendChild(card);
+          }
+        }
+        
+        if (totalComments === 0) {
+          empty.classList.remove('hidden');
+        }
+        
+      } catch (err) {
+        loading.textContent = 'Fehler: ' + err.message;
+      }
+    }
+    
+    function createCommentCard(post, comment) {
+      const card = document.createElement('div');
+      card.className = 'comment-card bg-white/5 border border-white/10 rounded-lg p-4 flex gap-4';
+      card.id = `comment-${comment.id}`;
+      
+      const date = new Date(comment.timestamp).toLocaleDateString('de-CH', {
+        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+      });
+      
+      card.innerHTML = `
+        <a href="${post.permalink}" target="_blank" class="flex-shrink-0">
+          <img src="${post.thumbnail}" alt="" class="w-20 h-20 object-cover rounded">
+        </a>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-start justify-between gap-2 mb-2">
+            <div>
+              <span class="font-medium">@${comment.username}</span>
+              <span class="text-neutral-500 text-sm ml-2">${date}</span>
+            </div>
+            <a href="${post.permalink}" target="_blank" class="text-neutral-500 hover:text-white text-sm">↗</a>
+          </div>
+          <p class="text-neutral-300 mb-3">${escapeHtml(comment.text)}</p>
+          <div class="flex gap-2">
+            <input 
+              type="text" 
+              id="reply-${comment.id}" 
+              placeholder="Antwort schreiben..."
+              class="flex-1 bg-white/5 border border-white/10 rounded px-3 py-2 text-sm focus:outline-none focus:border-white/30"
+              onkeydown="if(event.key==='Enter') sendReply('${comment.id}')"
+            >
+            <button 
+              onclick="sendReply('${comment.id}')"
+              class="px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-sm transition-colors"
+            >
+              Senden
+            </button>
+            <button 
+              onclick="markDone('${comment.id}')"
+              class="px-3 py-2 text-neutral-500 hover:text-green-400 transition-colors"
+              title="Als erledigt markieren"
+            >
+              ✓
+            </button>
+          </div>
+        </div>
+      `;
+      
+      return card;
+    }
+    
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
+    async function sendReply(commentId) {
+      const input = document.getElementById(`reply-${commentId}`);
+      const message = input.value.trim();
+      
+      if (!message) return;
+      
+      input.disabled = true;
+      
+      try {
+        const res = await fetch('/api/reply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ comment_id: commentId, message })
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+          markDone(commentId);
+        } else {
+          alert('Fehler: ' + (data.error?.message || 'Unbekannt'));
+          input.disabled = false;
+        }
+      } catch (err) {
+        alert('Fehler: ' + err.message);
+        input.disabled = false;
+      }
+    }
+    
+    function markDone(commentId) {
+      const card = document.getElementById(`comment-${commentId}`);
+      if (card) {
+        card.classList.add('replied');
+        setTimeout(() => card.classList.add('hidden'), 300);
+      }
+    }
+    
+    // Load on start
+    loadComments();
+  </script>
+</body>
+</html>

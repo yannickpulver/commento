@@ -109,7 +109,7 @@
       }
     }
     
-    async function loadPosts(cursor = null) {
+    async function loadPosts(cursor = null, autoLoad = true) {
       if (isLoading) return;
       isLoading = true;
       
@@ -124,6 +124,8 @@
         document.getElementById('load-more-btn').textContent = 'Laden...';
       }
       
+      let foundAny = false;
+      
       try {
         const url = cursor ? `/api/media?cursor=${cursor}` : '/api/media';
         const res = await fetch(url);
@@ -135,10 +137,16 @@
           return;
         }
         
-        loading.classList.add('hidden');
         nextCursor = data.nextCursor;
         
-        for (const post of data.posts) {
+        for (let i = 0; i < data.posts.length; i++) {
+          const post = data.posts[i];
+          
+          // Show progress
+          loading.classList.remove('hidden');
+          const caption = post.caption ? post.caption.substring(0, 30) + '...' : 'Post';
+          loading.textContent = `Prüfe Post ${i + 1}/${data.posts.length}: "${caption}"`;
+          
           const comments = await loadCommentsForPost(post);
           if (comments.length > 0) {
             for (const comment of comments) {
@@ -146,6 +154,7 @@
               if (isDismissed(comment.id)) continue;
               
               totalCount++;
+              foundAny = true;
               const card = createCommentCard(comment, post);
               container.appendChild(card);
             }
@@ -153,11 +162,22 @@
           }
         }
         
+        loading.classList.add('hidden');
+        
         if (nextCursor) {
           loadMoreDiv.classList.remove('hidden');
           document.getElementById('load-more-btn').textContent = 'Ältere Posts laden...';
         } else {
           loadMoreDiv.classList.add('hidden');
+        }
+        
+        // Auto-load more if nothing found yet and there are more posts
+        if (!foundAny && totalCount === 0 && nextCursor && autoLoad) {
+          loading.classList.remove('hidden');
+          loading.textContent = 'Keine Kommentare gefunden, lade ältere Posts...';
+          isLoading = false;
+          await loadPosts(nextCursor, true);
+          return;
         }
         
         if (totalCount === 0 && !nextCursor) {
@@ -184,7 +204,7 @@
     
     function loadMorePosts() {
       if (nextCursor) {
-        loadPosts(nextCursor);
+        loadPosts(nextCursor, false); // Manual load doesn't auto-continue
       }
     }
     

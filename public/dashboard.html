@@ -218,7 +218,7 @@
         const data = await res.json();
         
         if (data.success) {
-          markDone(commentId);
+          markDone(commentId, true);
         } else {
           alert('Fehler: ' + (data.error?.message || JSON.stringify(data.error) || 'Unbekannt'));
           input.disabled = false;
@@ -229,14 +229,32 @@
       }
     }
     
-    function markDone(commentId) {
+    function markDone(commentId, focusNext = false) {
       const card = document.getElementById(`comment-${commentId}`);
       if (card) {
+        // Find next visible card's input before hiding this one
+        let nextInput = null;
+        if (focusNext) {
+          let sibling = card.nextElementSibling;
+          while (sibling) {
+            if (sibling.classList.contains('comment-card') && !sibling.classList.contains('hidden')) {
+              nextInput = sibling.querySelector('input[type="text"]');
+              break;
+            }
+            sibling = sibling.nextElementSibling;
+          }
+        }
+        
         card.classList.add('replied');
         setTimeout(() => {
           card.classList.add('hidden');
           totalCount--;
           updateCount();
+          
+          // Focus next input
+          if (nextInput) {
+            nextInput.focus();
+          }
           
           // Check if all done
           if (totalCount === 0 && !nextCursor) {

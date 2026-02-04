@@ -198,23 +198,25 @@ app.get('/api/avatar/:username', async (req, res) => {
   }
   
   try {
-    // Fetch Instagram profile page
-    const response = await fetch(`https://www.instagram.com/${username}/`, {
+    // Use Instagram's private API (same as mobile app)
+    const response = await fetch(`https://i.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': 'Instagram 275.0.0.27.98 Android (33/13; 420dpi; 1080x2400; Google/google; Pixel 7; panther; panther; en_US; 458229237)',
+        'X-IG-App-ID': '936619743392459',
+        'Accept': '*/*',
       }
     });
     
-    const html = await response.text();
-    
-    // Extract profile picture from og:image meta tag
-    const ogMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
-    if (ogMatch && ogMatch[1]) {
-      const avatarUrl = ogMatch[1].replace(/&amp;/g, '&');
-      avatarCache.set(username, { url: avatarUrl, time: Date.now() });
-      return res.redirect(avatarUrl);
+    if (response.ok) {
+      const data = await response.json();
+      const avatarUrl = data?.data?.user?.profile_pic_url_hd || data?.data?.user?.profile_pic_url;
+      
+      if (avatarUrl) {
+        // Decode unicode escapes
+        const decodedUrl = avatarUrl.replace(/\\u0026/g, '&');
+        avatarCache.set(username, { url: decodedUrl, time: Date.now() });
+        return res.redirect(decodedUrl);
+      }
     }
     
     // Fallback: UI Avatars

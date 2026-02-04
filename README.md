@@ -1,27 +1,27 @@
-# Commento 📸
+# Commento 💬
 
-Dashboard für unbeantwortete Instagram-Kommentare.
+Dashboard for unanswered Instagram comments.
 
 **🔗 Live: [commento-five.vercel.app](https://commento-five.vercel.app)**
 
 ## Features
 
-- 📸 Zeigt alle Posts mit unbeantworteten Kommentaren
-- 💬 Direkt antworten (mit auto @username)
-- ✓ Als erledigt markieren (bleibt versteckt)
-- 📱 Mobile-optimiert
-- ⚡ Lazy Loading (10 Posts auf einmal)
-- 🎨 DiceBear Avatare
+- 📸 Shows all posts with unanswered comments
+- 💬 Reply directly (auto-prepends @username)
+- ✕ Dismiss comments (persists across sessions)
+- 📱 Mobile-optimized
+- ⚡ Lazy loading (10 posts at a time)
+- 🎨 DiceBear avatars
 
 ## Setup (Self-Hosting)
 
-### 1. Facebook App konfigurieren
+### 1. Configure Facebook App
 
-In deiner [Facebook Developer Console](https://developers.facebook.com/apps/):
+In your [Facebook Developer Console](https://developers.facebook.com/apps/):
 
 1. **Settings → Basic:**
    - App Domains: `localhost`, `your-domain.vercel.app`
-   - Privacy Policy URL: (irgendeine URL)
+   - Privacy Policy URL: (any URL)
 
 2. **Add Product → Facebook Login:**
    - Valid OAuth Redirect URIs: 
@@ -45,7 +45,7 @@ REDIRECT_URI=http://localhost:3000/callback
 PORT=3000
 ```
 
-### 3. Starten
+### 3. Run
 
 ```bash
 npm install
@@ -54,16 +54,15 @@ npm start
 
 ## Deploy (Vercel)
 
-1. Fork/Clone dieses Repo
-2. In Vercel importieren
-3. Environment Variables setzen (REDIRECT_URI = deine Vercel URL + `/callback`)
+1. Fork/clone this repo
+2. Import in Vercel
+3. Set environment variables (REDIRECT_URI = your Vercel URL + `/callback`)
 4. Deploy!
 
 ## Troubleshooting
 
 **"No Facebook Pages found"**
-→ Dein Instagram muss mit einer Facebook Page verbunden sein (Business/Creator Account)
+→ Your Instagram must be connected to a Facebook Page (Business/Creator Account)
 
 **"Permission denied"**
-→ Geh zu App Review und stelle sicher, dass alle Permissions für dich aktiviert sind (als Admin brauchst du kein Review)
-
+→ Go to App Review and make sure all permissions are enabled for you (as admin you don't need a review)

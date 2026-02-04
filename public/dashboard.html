@@ -166,9 +166,9 @@
       
       card.innerHTML = `
         <div class="flex gap-3">
-          <!-- Post Thumbnail (hidden on mobile) -->
-          <a href="${post.permalink}" target="_blank" class="hidden sm:block flex-shrink-0">
-            <img src="${thumbnail}" alt="" class="w-16 h-16 object-cover rounded" loading="lazy">
+          <!-- Post Thumbnail -->
+          <a href="${post.permalink}" target="_blank" class="flex-shrink-0">
+            <img src="${thumbnail}" alt="" class="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded" loading="lazy">
           </a>
           
           <!-- Content -->

@@ -261,10 +261,10 @@
                 id="reply-${comment.id}" 
                 placeholder="Antwort..."
                 class="flex-1 min-w-0 bg-white/5 border border-white/10 rounded px-3 py-2 text-sm focus:outline-none focus:border-white/30"
-                onkeydown="if(event.key==='Enter') sendReply('${comment.id}')"
+                onkeydown="if(event.key==='Enter') sendReply('${comment.id}', '${comment.username}')"
               >
               <button 
-                onclick="sendReply('${comment.id}')"
+                onclick="sendReply('${comment.id}', '${comment.username}')"
                 class="px-3 sm:px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-sm transition-colors flex-shrink-0"
               >
                 <span class="hidden sm:inline">Senden</span>
@@ -296,13 +296,18 @@
       return div.innerHTML;
     }
     
-    async function sendReply(commentId) {
+    async function sendReply(commentId, username) {
       const input = document.getElementById(`reply-${commentId}`);
       const card = document.getElementById(`comment-${commentId}`);
       const sendingBadge = document.getElementById(`sending-${commentId}`);
-      const message = input.value.trim();
+      let message = input.value.trim();
       
       if (!message) return;
+      
+      // Prepend @username if not already there
+      if (!message.startsWith('@')) {
+        message = `@${username} ${message}`;
+      }
       
       input.disabled = true;
       card.classList.add('sending');

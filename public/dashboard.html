@@ -161,7 +161,7 @@
       });
       
       const thumbnail = post.thumbnail_url || post.media_url;
-      const avatarUrl = `https://unavatar.io/instagram/${comment.username}?fallback=false`;
+      const avatarUrl = `/api/avatar/${comment.username}`;
       const initials = getInitials(comment.username);
       
       card.innerHTML = `

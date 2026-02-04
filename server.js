@@ -186,6 +186,45 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// API: Get Instagram profile picture (proxy)
+const avatarCache = new Map();
+app.get('/api/avatar/:username', async (req, res) => {
+  const { username } = req.params;
+  
+  // Check cache first (1 hour)
+  const cached = avatarCache.get(username);
+  if (cached && (Date.now() - cached.time) < 3600000) {
+    return res.redirect(cached.url);
+  }
+  
+  try {
+    // Fetch Instagram profile page
+    const response = await fetch(`https://www.instagram.com/${username}/`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      }
+    });
+    
+    const html = await response.text();
+    
+    // Extract profile picture from og:image meta tag
+    const ogMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
+    if (ogMatch && ogMatch[1]) {
+      const avatarUrl = ogMatch[1].replace(/&amp;/g, '&');
+      avatarCache.set(username, { url: avatarUrl, time: Date.now() });
+      return res.redirect(avatarUrl);
+    }
+    
+    // Fallback: UI Avatars
+    res.redirect(`https://ui-avatars.com/api/?name=${username}&background=333&color=fff&size=64`);
+  } catch (err) {
+    // Fallback on error
+    res.redirect(`https://ui-avatars.com/api/?name=${username}&background=333&color=fff&size=64`);
+  }
+});
+
 // Logout
 app.get('/logout', (req, res) => {
   res.setHeader('Set-Cookie', 'ig_token=; Path=/; Max-Age=0');

@@ -29,8 +29,8 @@
       <button onclick="refresh()" class="p-2 text-neutral-400 hover:text-white" title="Refresh">
         🔄
       </button>
-      <button onclick="clearDismissed()" id="clear-btn" class="text-xs text-neutral-500 hover:text-white hidden" title="Erledigte zurücksetzen">
-        <span id="dismissed-count"></span> versteckt
+      <button onclick="clearDismissed()" id="clear-btn" class="text-xs text-neutral-500 hover:text-white hidden" title="Show dismissed">
+        <span id="dismissed-count"></span> hidden
       </button>
       <a href="/logout" class="text-xs sm:text-sm text-neutral-400 hover:text-white">Logout</a>
     </div>
@@ -39,18 +39,18 @@
   <!-- Main Content -->
   <main class="max-w-3xl mx-auto p-3 sm:p-6">
     <div id="loading" class="text-center py-8 text-neutral-500">
-      Lade Posts...
+      Loading posts...
     </div>
     
     <div id="empty" class="text-center py-12 text-neutral-400 hidden">
-      ✅ Keine unbeantworteten Kommentare!
+      ✅ No unanswered comments!
     </div>
     
     <div id="comments" class="space-y-3"></div>
     
     <div id="load-more" class="text-center py-6 hidden">
       <button onclick="loadMorePosts()" id="load-more-btn" class="px-5 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors">
-        Ältere Posts laden...
+        Load older posts...
       </button>
     </div>
   </main>
@@ -59,6 +59,7 @@
     let nextCursor = null;
     let totalCount = 0;
     let isLoading = false;
+    let initialLoadDone = false;
     
     // Persistent storage for dismissed comments
     const STORAGE_KEY = 'commento_dismissed';
@@ -72,7 +73,6 @@
     }
     
     function saveDismissed(ids) {
-      // Keep only last 1000 IDs to prevent bloat
       const trimmed = ids.slice(-1000);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
     }
@@ -91,7 +91,7 @@
     }
     
     function clearDismissed() {
-      if (confirm('Alle erledigten Kommentare wieder anzeigen?')) {
+      if (confirm('Show all dismissed comments again?')) {
         localStorage.removeItem(STORAGE_KEY);
         refresh();
       }
@@ -109,19 +109,28 @@
       }
     }
     
+    function showLoading(text) {
+      const loading = document.getElementById('loading');
+      loading.textContent = text;
+      loading.classList.remove('hidden');
+    }
+    
+    function hideLoading() {
+      document.getElementById('loading').classList.add('hidden');
+    }
+    
     async function loadPosts(cursor = null, autoLoad = true) {
       if (isLoading) return;
       isLoading = true;
       
-      const loading = document.getElementById('loading');
       const container = document.getElementById('comments');
       const loadMoreDiv = document.getElementById('load-more');
       
-      if (!cursor) {
-        loading.classList.remove('hidden');
-        loading.textContent = 'Lade Posts...';
-      } else {
-        document.getElementById('load-more-btn').textContent = 'Laden...';
+      // Only show loading on initial load, not when scrolling back
+      if (!initialLoadDone) {
+        showLoading('Loading posts...');
+      } else if (cursor) {
+        document.getElementById('load-more-btn').textContent = 'Loading...';
       }
       
       let foundAny = false;
@@ -132,7 +141,7 @@
         const data = await res.json();
         
         if (data.error) {
-          loading.textContent = `Error: ${data.error}`;
+          showLoading(`Error: ${data.error}`);
           isLoading = false;
           return;
         }
@@ -142,15 +151,15 @@
         for (let i = 0; i < data.posts.length; i++) {
           const post = data.posts[i];
           
-          // Show progress
-          loading.classList.remove('hidden');
-          const caption = post.caption ? post.caption.substring(0, 30) + '...' : 'Post';
-          loading.textContent = `Prüfe Post ${i + 1}/${data.posts.length}: "${caption}"`;
+          // Show progress only on initial load when nothing found yet
+          if (!initialLoadDone && totalCount === 0) {
+            const caption = post.caption ? post.caption.substring(0, 30) + '...' : 'Post';
+            showLoading(`Checking post ${i + 1}/${data.posts.length}: "${caption}"`);
+          }
           
           const comments = await loadCommentsForPost(post);
           if (comments.length > 0) {
             for (const comment of comments) {
-              // Skip already dismissed comments
               if (isDismissed(comment.id)) continue;
               
               totalCount++;
@@ -159,22 +168,27 @@
               container.appendChild(card);
             }
             updateCount();
+            
+            // Hide loading as soon as we have content
+            if (totalCount > 0) {
+              hideLoading();
+            }
           }
         }
         
-        loading.classList.add('hidden');
+        hideLoading();
+        initialLoadDone = true;
         
         if (nextCursor) {
           loadMoreDiv.classList.remove('hidden');
-          document.getElementById('load-more-btn').textContent = 'Ältere Posts laden...';
+          document.getElementById('load-more-btn').textContent = 'Load older posts...';
         } else {
           loadMoreDiv.classList.add('hidden');
         }
         
         // Auto-load more if nothing found yet and there are more posts
         if (!foundAny && totalCount === 0 && nextCursor && autoLoad) {
-          loading.classList.remove('hidden');
-          loading.textContent = 'Keine Kommentare gefunden, lade ältere Posts...';
+          showLoading('No comments found, loading older posts...');
           isLoading = false;
           await loadPosts(nextCursor, true);
           return;
@@ -185,7 +199,7 @@
         }
         
       } catch (err) {
-        loading.textContent = `Error: ${err.message}`;
+        showLoading(`Error: ${err.message}`);
       }
       
       isLoading = false;
@@ -204,7 +218,7 @@
     
     function loadMorePosts() {
       if (nextCursor) {
-        loadPosts(nextCursor, false); // Manual load doesn't auto-continue
+        loadPosts(nextCursor, false);
       }
     }
     
@@ -213,6 +227,7 @@
       document.getElementById('empty').classList.add('hidden');
       totalCount = 0;
       nextCursor = null;
+      initialLoadDone = false;
       updateCount();
       loadPosts();
     }
@@ -231,7 +246,7 @@
       card.className = 'comment-card bg-white/5 border border-white/10 rounded-lg p-3 sm:p-4';
       card.id = `comment-${comment.id}`;
       
-      const date = new Date(comment.timestamp).toLocaleDateString('de-CH', {
+      const date = new Date(comment.timestamp).toLocaleDateString('en-US', {
         day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
       });
       
@@ -279,7 +294,7 @@
               <input 
                 type="text" 
                 id="reply-${comment.id}" 
-                placeholder="Antwort..."
+                placeholder="Reply..."
                 class="flex-1 min-w-0 bg-white/5 border border-white/10 rounded px-3 py-2 text-sm focus:outline-none focus:border-white/30"
                 onkeydown="if(event.key==='Enter') sendReply('${comment.id}', '${comment.username}')"
               >
@@ -287,13 +302,13 @@
                 onclick="sendReply('${comment.id}', '${comment.username}')"
                 class="px-3 sm:px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-sm transition-colors flex-shrink-0"
               >
-                <span class="hidden sm:inline">Senden</span>
+                <span class="hidden sm:inline">Send</span>
                 <span class="sm:hidden">↑</span>
               </button>
               <button 
                 onclick="markDone('${comment.id}')"
                 class="px-2 py-2 text-neutral-500 hover:text-green-400 transition-colors flex-shrink-0"
-                title="Als erledigt markieren"
+                title="Mark as done"
               >
                 ✓
               </button>
@@ -301,7 +316,7 @@
             
             <!-- Sending indicator -->
             <div id="sending-${comment.id}" class="sending-badge text-xs text-neutral-500 mt-2 hidden">
-              ⏳ Senden...
+              ⏳ Sending...
             </div>
           </div>
         </div>
@@ -324,7 +339,6 @@
       
       if (!message) return;
       
-      // Prepend @username if not already there
       if (!message.startsWith('@')) {
         message = `@${username} ${message}`;
       }
@@ -351,14 +365,14 @@
           sendingBadge.classList.add('hidden');
           input.disabled = false;
           input.focus();
-          alert('Fehler: ' + (data.error?.message || JSON.stringify(data.error) || 'Unbekannt'));
+          alert('Error: ' + (data.error?.message || JSON.stringify(data.error) || 'Unknown'));
         }
       } catch (err) {
         card.classList.remove('sending');
         sendingBadge.classList.add('hidden');
         input.disabled = false;
         input.focus();
-        alert('Fehler: ' + err.message);
+        alert('Error: ' + err.message);
       }
     }
     
@@ -379,7 +393,6 @@
     function markDone(commentId) {
       const card = document.getElementById(`comment-${commentId}`);
       if (card) {
-        // Persist to localStorage
         addDismissed(commentId);
         
         card.classList.remove('sending');

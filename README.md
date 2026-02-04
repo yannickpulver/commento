@@ -1,19 +1,32 @@
-# Instagram Comment Dashboard
+# Commento 📸
 
-Zeigt alle unbeantworteten Instagram-Kommentare mit Thumbnail und Antwort-Möglichkeit.
+Dashboard für unbeantwortete Instagram-Kommentare.
 
-## Setup
+**🔗 Live: [commento-five.vercel.app](https://commento-five.vercel.app)**
+
+## Features
+
+- 📸 Zeigt alle Posts mit unbeantworteten Kommentaren
+- 💬 Direkt antworten (mit auto @username)
+- ✓ Als erledigt markieren (bleibt versteckt)
+- 📱 Mobile-optimiert
+- ⚡ Lazy Loading (10 Posts auf einmal)
+- 🎨 DiceBear Avatare
+
+## Setup (Self-Hosting)
 
 ### 1. Facebook App konfigurieren
 
 In deiner [Facebook Developer Console](https://developers.facebook.com/apps/):
 
 1. **Settings → Basic:**
-   - App Domains: `localhost`
+   - App Domains: `localhost`, `your-domain.vercel.app`
    - Privacy Policy URL: (irgendeine URL)
 
 2. **Add Product → Facebook Login:**
-   - Valid OAuth Redirect URIs: `http://localhost:3000/callback`
+   - Valid OAuth Redirect URIs: 
+     - `http://localhost:3000/callback`
+     - `https://your-domain.vercel.app/callback`
 
 3. **Add Product → Instagram Graph API**
 
@@ -23,26 +36,28 @@ In deiner [Facebook Developer Console](https://developers.facebook.com/apps/):
    - `pages_show_list` ✓
    - `pages_read_engagement` ✓
 
-### 2. Starten
+### 2. Environment Variables
 
 ```bash
-cd instagram-dashboard
+FB_APP_ID=your_app_id
+FB_APP_SECRET=your_app_secret
+REDIRECT_URI=http://localhost:3000/callback
+PORT=3000
+```
+
+### 3. Starten
+
+```bash
 npm install
 npm start
 ```
 
-### 3. Öffnen
+## Deploy (Vercel)
 
-http://localhost:3000
-
-Beim ersten Mal wirst du zur Instagram/Facebook-Anmeldung weitergeleitet.
-
-## Features
-
-- 📸 Zeigt alle Posts mit unbeantworteten Kommentaren
-- 💬 Direkt antworten aus dem Dashboard
-- ✓ Als erledigt markieren
-- 🔄 Refresh Button
+1. Fork/Clone dieses Repo
+2. In Vercel importieren
+3. Environment Variables setzen (REDIRECT_URI = deine Vercel URL + `/callback`)
+4. Deploy!
 
 ## Troubleshooting
 

@@ -6,20 +6,11 @@
   <title>Commento</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    .comment-card { transition: all 0.3s ease; position: relative; }
+    .comment-card { transition: all 0.3s ease; }
     .comment-card.replied { opacity: 0.5; transform: scale(0.98); }
     .comment-card.hidden { display: none; }
     .comment-card.sending { opacity: 0.6; }
-    .comment-card.sending::after {
-      content: '⏳ Senden...';
-      position: absolute;
-      top: 50%;
-      right: 1rem;
-      transform: translateY(-50%);
-      font-size: 0.75rem;
-      color: #a3a3a3;
-      animation: pulse 1s infinite;
-    }
+    .sending-badge { animation: pulse 1s infinite; }
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.5; }
@@ -28,18 +19,22 @@
 </head>
 <body class="bg-neutral-950 text-white min-h-screen">
   
-  <header class="border-b border-white/10 px-6 py-4 flex items-center justify-between sticky top-0 bg-neutral-950/90 backdrop-blur-sm z-10">
-    <div class="flex items-center gap-4">
-      <h1 class="text-xl font-medium">📸 Commento</h1>
-      <span id="count" class="text-sm text-neutral-500"></span>
+  <!-- Header -->
+  <header class="border-b border-white/10 px-4 py-3 flex items-center justify-between sticky top-0 bg-neutral-950/95 backdrop-blur-sm z-10">
+    <div class="flex items-center gap-2 sm:gap-4">
+      <h1 class="text-lg sm:text-xl font-medium">📸 Commento</h1>
+      <span id="count" class="text-xs sm:text-sm text-neutral-500"></span>
     </div>
-    <div class="flex items-center gap-4">
-      <button onclick="refresh()" class="text-sm text-neutral-400 hover:text-white">🔄 Refresh</button>
-      <a href="/logout" class="text-sm text-neutral-400 hover:text-white">Logout</a>
+    <div class="flex items-center gap-2 sm:gap-4">
+      <button onclick="refresh()" class="p-2 text-neutral-400 hover:text-white" title="Refresh">
+        🔄
+      </button>
+      <a href="/logout" class="text-xs sm:text-sm text-neutral-400 hover:text-white">Logout</a>
     </div>
   </header>
   
-  <main class="max-w-4xl mx-auto p-6">
+  <!-- Main Content -->
+  <main class="max-w-3xl mx-auto p-3 sm:p-6">
     <div id="loading" class="text-center py-8 text-neutral-500">
       Lade Posts...
     </div>
@@ -48,10 +43,10 @@
       ✅ Keine unbeantworteten Kommentare!
     </div>
     
-    <div id="comments" class="space-y-4"></div>
+    <div id="comments" class="space-y-3"></div>
     
-    <div id="load-more" class="text-center py-8 hidden">
-      <button onclick="loadMorePosts()" id="load-more-btn" class="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors">
+    <div id="load-more" class="text-center py-6 hidden">
+      <button onclick="loadMorePosts()" id="load-more-btn" class="px-5 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors">
         Ältere Posts laden...
       </button>
     </div>
@@ -91,12 +86,9 @@
         loading.classList.add('hidden');
         nextCursor = data.nextCursor;
         
-        // Load comments for each post
-        let foundAny = false;
         for (const post of data.posts) {
           const comments = await loadCommentsForPost(post);
           if (comments.length > 0) {
-            foundAny = true;
             for (const comment of comments) {
               totalCount++;
               const card = createCommentCard(comment, post);
@@ -106,7 +98,6 @@
           }
         }
         
-        // Show load more if there are more posts
         if (nextCursor) {
           loadMoreDiv.classList.remove('hidden');
           document.getElementById('load-more-btn').textContent = 'Ältere Posts laden...';
@@ -114,7 +105,6 @@
           loadMoreDiv.classList.add('hidden');
         }
         
-        // Show empty if nothing found and no more to load
         if (totalCount === 0 && !nextCursor) {
           document.getElementById('empty').classList.remove('hidden');
         }
@@ -154,12 +144,16 @@
     
     function updateCount() {
       const countEl = document.getElementById('count');
-      countEl.textContent = totalCount > 0 ? `${totalCount} unbeantwortet` : '';
+      countEl.textContent = totalCount > 0 ? `${totalCount}` : '';
+    }
+    
+    function getInitials(username) {
+      return username.substring(0, 2).toUpperCase();
     }
     
     function createCommentCard(comment, post) {
       const card = document.createElement('div');
-      card.className = 'comment-card bg-white/5 border border-white/10 rounded-lg p-4 flex gap-4';
+      card.className = 'comment-card bg-white/5 border border-white/10 rounded-lg p-3 sm:p-4';
       card.id = `comment-${comment.id}`;
       
       const date = new Date(comment.timestamp).toLocaleDateString('de-CH', {
@@ -167,41 +161,73 @@
       });
       
       const thumbnail = post.thumbnail_url || post.media_url;
+      const avatarUrl = `https://unavatar.io/instagram/${comment.username}?fallback=false`;
+      const initials = getInitials(comment.username);
       
       card.innerHTML = `
-        <a href="${post.permalink}" target="_blank" class="flex-shrink-0">
-          <img src="${thumbnail}" alt="" class="w-20 h-20 object-cover rounded" loading="lazy">
-        </a>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-start justify-between gap-2 mb-2">
-            <div>
-              <span class="font-medium">@${comment.username}</span>
-              <span class="text-neutral-500 text-sm ml-2">${date}</span>
+        <div class="flex gap-3">
+          <!-- Post Thumbnail (hidden on mobile) -->
+          <a href="${post.permalink}" target="_blank" class="hidden sm:block flex-shrink-0">
+            <img src="${thumbnail}" alt="" class="w-16 h-16 object-cover rounded" loading="lazy">
+          </a>
+          
+          <!-- Content -->
+          <div class="flex-1 min-w-0">
+            <!-- Header with avatar -->
+            <div class="flex items-center gap-2 mb-2">
+              <div class="relative w-8 h-8 flex-shrink-0">
+                <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-xs font-medium">
+                  ${initials}
+                </div>
+                <img 
+                  src="${avatarUrl}" 
+                  alt="" 
+                  class="absolute inset-0 w-8 h-8 rounded-full object-cover"
+                  onerror="this.style.display='none'"
+                  loading="lazy"
+                >
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-medium text-sm truncate">@${comment.username}</span>
+                  <span class="text-neutral-500 text-xs">${date}</span>
+                </div>
+              </div>
+              <a href="${post.permalink}" target="_blank" class="text-neutral-500 hover:text-white text-sm p-1">↗</a>
             </div>
-            <a href="${post.permalink}" target="_blank" class="text-neutral-500 hover:text-white text-sm">↗</a>
-          </div>
-          <p class="text-neutral-300 mb-3">${escapeHtml(comment.text)}</p>
-          <div class="flex gap-2">
-            <input 
-              type="text" 
-              id="reply-${comment.id}" 
-              placeholder="Antwort schreiben..."
-              class="flex-1 bg-white/5 border border-white/10 rounded px-3 py-2 text-sm focus:outline-none focus:border-white/30"
-              onkeydown="if(event.key==='Enter') sendReply('${comment.id}')"
-            >
-            <button 
-              onclick="sendReply('${comment.id}')"
-              class="px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-sm transition-colors"
-            >
-              Senden
-            </button>
-            <button 
-              onclick="markDone('${comment.id}')"
-              class="px-3 py-2 text-neutral-500 hover:text-green-400 transition-colors"
-              title="Als erledigt markieren"
-            >
-              ✓
-            </button>
+            
+            <!-- Comment Text -->
+            <p class="text-neutral-300 text-sm mb-3 break-words">${escapeHtml(comment.text)}</p>
+            
+            <!-- Reply Input -->
+            <div class="flex gap-2">
+              <input 
+                type="text" 
+                id="reply-${comment.id}" 
+                placeholder="Antwort..."
+                class="flex-1 min-w-0 bg-white/5 border border-white/10 rounded px-3 py-2 text-sm focus:outline-none focus:border-white/30"
+                onkeydown="if(event.key==='Enter') sendReply('${comment.id}')"
+              >
+              <button 
+                onclick="sendReply('${comment.id}')"
+                class="px-3 sm:px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-sm transition-colors flex-shrink-0"
+              >
+                <span class="hidden sm:inline">Senden</span>
+                <span class="sm:hidden">↑</span>
+              </button>
+              <button 
+                onclick="markDone('${comment.id}')"
+                class="px-2 py-2 text-neutral-500 hover:text-green-400 transition-colors flex-shrink-0"
+                title="Als erledigt markieren"
+              >
+                ✓
+              </button>
+            </div>
+            
+            <!-- Sending indicator -->
+            <div id="sending-${comment.id}" class="sending-badge text-xs text-neutral-500 mt-2 hidden">
+              ⏳ Senden...
+            </div>
           </div>
         </div>
       `;
@@ -218,15 +244,15 @@
     async function sendReply(commentId) {
       const input = document.getElementById(`reply-${commentId}`);
       const card = document.getElementById(`comment-${commentId}`);
+      const sendingBadge = document.getElementById(`sending-${commentId}`);
       const message = input.value.trim();
       
       if (!message) return;
       
-      // Immediately show sending state and move to next
       input.disabled = true;
       card.classList.add('sending');
+      sendingBadge.classList.remove('hidden');
       
-      // Focus next input immediately
       focusNextInput(card);
       
       try {
@@ -239,16 +265,17 @@
         const data = await res.json();
         
         if (data.success) {
-          markDone(commentId, false);
+          markDone(commentId);
         } else {
-          // Show error, restore card
           card.classList.remove('sending');
+          sendingBadge.classList.add('hidden');
           input.disabled = false;
           input.focus();
           alert('Fehler: ' + (data.error?.message || JSON.stringify(data.error) || 'Unbekannt'));
         }
       } catch (err) {
         card.classList.remove('sending');
+        sendingBadge.classList.add('hidden');
         input.disabled = false;
         input.focus();
         alert('Fehler: ' + err.message);
@@ -279,7 +306,6 @@
           totalCount--;
           updateCount();
           
-          // Check if all done
           if (totalCount === 0 && !nextCursor) {
             document.getElementById('empty').classList.remove('hidden');
           }

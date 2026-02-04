@@ -1,38 +1,32 @@
 require('dotenv').config();
 const express = require('express');
 const fetch = require('node-fetch');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 app.use(express.json());
 app.use(express.static('public'));
 
 const { FB_APP_ID, FB_APP_SECRET, REDIRECT_URI, PORT } = process.env;
-const TOKEN_FILE = path.join(__dirname, 'token.json');
 
-// Helper: Load saved token
-function loadToken() {
-  try {
-    if (fs.existsSync(TOKEN_FILE)) {
-      return JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8'));
-    }
-  } catch (e) {}
+// Cookie helper
+function parseTokenCookie(req) {
+  const cookies = req.headers.cookie || '';
+  const match = cookies.match(/ig_token=([^;]+)/);
+  if (match) {
+    try {
+      return JSON.parse(decodeURIComponent(match[1]));
+    } catch (e) {}
+  }
   return null;
-}
-
-// Helper: Save token
-function saveToken(data) {
-  fs.writeFileSync(TOKEN_FILE, JSON.stringify(data, null, 2));
 }
 
 // Home page
 app.get('/', (req, res) => {
-  const token = loadToken();
+  const token = parseTokenCookie(req);
   if (token && token.access_token) {
-    res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+    res.sendFile(__dirname + '/public/dashboard.html');
   } else {
-    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+    res.sendFile(__dirname + '/public/login.html');
   }
 });
 
@@ -85,14 +79,14 @@ app.get('/callback', async (req, res) => {
       return res.send('No Instagram Business Account connected to this Page.');
     }
     
-    // Save everything
-    saveToken({
+    // Save in cookie (60 days)
+    const tokenObj = {
       access_token: pageToken,
       instagram_id: igData.instagram_business_account.id,
-      page_id: pageId,
-      expires_at: Date.now() + (60 * 24 * 60 * 60 * 1000) // ~60 days
-    });
+      page_id: pageId
+    };
     
+    res.setHeader('Set-Cookie', `ig_token=${encodeURIComponent(JSON.stringify(tokenObj))}; Path=/; Max-Age=${60*24*60*60}; HttpOnly; SameSite=Lax`);
     res.redirect('/');
   } catch (err) {
     res.send(`Error: ${err.message}`);
@@ -101,7 +95,7 @@ app.get('/callback', async (req, res) => {
 
 // API: Get unanswered comments
 app.get('/api/comments', async (req, res) => {
-  const token = loadToken();
+  const token = parseTokenCookie(req);
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
   
   try {
@@ -124,9 +118,8 @@ app.get('/api/comments', async (req, res) => {
       );
       const commentsData = await commentsRes.json();
       
-      // Filter unanswered comments (no reply from owner)
+      // Filter unanswered comments (no reply)
       const unanswered = (commentsData.data || []).filter(comment => {
-        // If no replies, it's unanswered
         if (!comment.replies || !comment.replies.data || comment.replies.data.length === 0) {
           return true;
         }
@@ -150,7 +143,7 @@ app.get('/api/comments', async (req, res) => {
 
 // API: Reply to comment
 app.post('/api/reply', async (req, res) => {
-  const token = loadToken();
+  const token = parseTokenCookie(req);
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
   
   const { comment_id, message } = req.body;
@@ -181,7 +174,7 @@ app.post('/api/reply', async (req, res) => {
 
 // API: Check auth status
 app.get('/api/status', (req, res) => {
-  const token = loadToken();
+  const token = parseTokenCookie(req);
   res.json({ 
     authenticated: !!(token && token.access_token),
     instagram_id: token?.instagram_id 
@@ -190,12 +183,11 @@ app.get('/api/status', (req, res) => {
 
 // Logout
 app.get('/logout', (req, res) => {
-  if (fs.existsSync(TOKEN_FILE)) {
-    fs.unlinkSync(TOKEN_FILE);
-  }
+  res.setHeader('Set-Cookie', 'ig_token=; Path=/; Max-Age=0');
   res.redirect('/');
 });
 
-app.listen(PORT, () => {
-  console.log(`\\n🦞 Instagram Dashboard running at http://localhost:${PORT}\\n`);
+const port = PORT || 3000;
+app.listen(port, () => {
+  console.log(`\n🦞 Instagram Dashboard running at http://localhost:${port}\n`);
 });

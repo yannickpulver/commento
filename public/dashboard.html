@@ -29,6 +29,9 @@
       <button onclick="refresh()" class="p-2 text-neutral-400 hover:text-white" title="Refresh">
         🔄
       </button>
+      <button onclick="clearDismissed()" id="clear-btn" class="text-xs text-neutral-500 hover:text-white hidden" title="Erledigte zurücksetzen">
+        <span id="dismissed-count"></span> versteckt
+      </button>
       <a href="/logout" class="text-xs sm:text-sm text-neutral-400 hover:text-white">Logout</a>
     </div>
   </header>
@@ -56,6 +59,55 @@
     let nextCursor = null;
     let totalCount = 0;
     let isLoading = false;
+    
+    // Persistent storage for dismissed comments
+    const STORAGE_KEY = 'commento_dismissed';
+    
+    function getDismissed() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      } catch {
+        return [];
+      }
+    }
+    
+    function saveDismissed(ids) {
+      // Keep only last 1000 IDs to prevent bloat
+      const trimmed = ids.slice(-1000);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+    }
+    
+    function isDismissed(commentId) {
+      return getDismissed().includes(commentId);
+    }
+    
+    function addDismissed(commentId) {
+      const dismissed = getDismissed();
+      if (!dismissed.includes(commentId)) {
+        dismissed.push(commentId);
+        saveDismissed(dismissed);
+        updateDismissedUI();
+      }
+    }
+    
+    function clearDismissed() {
+      if (confirm('Alle erledigten Kommentare wieder anzeigen?')) {
+        localStorage.removeItem(STORAGE_KEY);
+        refresh();
+      }
+    }
+    
+    function updateDismissedUI() {
+      const count = getDismissed().length;
+      const btn = document.getElementById('clear-btn');
+      const countEl = document.getElementById('dismissed-count');
+      if (count > 0) {
+        btn.classList.remove('hidden');
+        countEl.textContent = count;
+      } else {
+        btn.classList.add('hidden');
+      }
+    }
     
     async function loadPosts(cursor = null) {
       if (isLoading) return;
@@ -90,6 +142,9 @@
           const comments = await loadCommentsForPost(post);
           if (comments.length > 0) {
             for (const comment of comments) {
+              // Skip already dismissed comments
+              if (isDismissed(comment.id)) continue;
+              
               totalCount++;
               const card = createCommentCard(comment, post);
               container.appendChild(card);
@@ -299,6 +354,9 @@
     function markDone(commentId) {
       const card = document.getElementById(`comment-${commentId}`);
       if (card) {
+        // Persist to localStorage
+        addDismissed(commentId);
+        
         card.classList.remove('sending');
         card.classList.add('replied');
         setTimeout(() => {
@@ -314,6 +372,7 @@
     }
     
     // Start loading
+    updateDismissedUI();
     loadPosts();
   </script>
 </body>

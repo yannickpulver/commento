@@ -67,6 +67,3 @@ npm start
 **"Permission denied"**
 → Geh zu App Review und stelle sicher, dass alle Permissions für dich aktiviert sind (als Admin brauchst du kein Review)
 
----
-
-Made with 🦞

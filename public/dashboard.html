@@ -3,17 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Instagram Dashboard</title>
+  <title>Commento</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     .comment-card { transition: all 0.3s ease; }
     .comment-card.replied { opacity: 0.5; transform: scale(0.98); }
     .comment-card.hidden { display: none; }
-    .skeleton { animation: pulse 2s infinite; }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
   </style>
 </head>
 <body class="bg-neutral-950 text-white min-h-screen">
@@ -24,19 +19,14 @@
       <span id="count" class="text-sm text-neutral-500"></span>
     </div>
     <div class="flex items-center gap-4">
-      <span id="cache-status" class="text-xs text-neutral-600"></span>
-      <button onclick="loadComments(true)" class="text-sm text-neutral-400 hover:text-white flex items-center gap-1">
-        <span id="refresh-icon">🔄</span> Refresh
-      </button>
+      <button onclick="refresh()" class="text-sm text-neutral-400 hover:text-white">🔄 Refresh</button>
       <a href="/logout" class="text-sm text-neutral-400 hover:text-white">Logout</a>
     </div>
   </header>
   
   <main class="max-w-4xl mx-auto p-6">
-    <div id="loading" class="space-y-4">
-      <div class="skeleton bg-white/5 rounded-lg h-32"></div>
-      <div class="skeleton bg-white/5 rounded-lg h-32"></div>
-      <div class="skeleton bg-white/5 rounded-lg h-32"></div>
+    <div id="loading" class="text-center py-8 text-neutral-500">
+      Lade Posts...
     </div>
     
     <div id="empty" class="text-center py-12 text-neutral-400 hidden">
@@ -46,96 +36,113 @@
     <div id="comments" class="space-y-4"></div>
     
     <div id="load-more" class="text-center py-8 hidden">
-      <button onclick="loadMore()" class="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors">
-        Mehr laden...
+      <button onclick="loadMorePosts()" id="load-more-btn" class="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors">
+        Ältere Posts laden...
       </button>
     </div>
   </main>
 
   <script>
-    let currentPage = 0;
-    let totalComments = 0;
-    let hasMore = false;
+    let nextCursor = null;
+    let totalCount = 0;
     let isLoading = false;
     
-    async function loadComments(refresh = false) {
+    async function loadPosts(cursor = null) {
       if (isLoading) return;
       isLoading = true;
       
       const loading = document.getElementById('loading');
-      const empty = document.getElementById('empty');
       const container = document.getElementById('comments');
-      const loadMoreBtn = document.getElementById('load-more');
-      const refreshIcon = document.getElementById('refresh-icon');
+      const loadMoreDiv = document.getElementById('load-more');
       
-      if (refresh) {
-        currentPage = 0;
-        container.innerHTML = '';
-        refreshIcon.style.animation = 'spin 1s linear infinite';
+      if (!cursor) {
+        loading.classList.remove('hidden');
+        loading.textContent = 'Lade Posts...';
+      } else {
+        document.getElementById('load-more-btn').textContent = 'Laden...';
       }
       
-      loading.classList.remove('hidden');
-      empty.classList.add('hidden');
-      loadMoreBtn.classList.add('hidden');
-      
       try {
-        const res = await fetch(`/api/comments?page=${currentPage}&limit=20&refresh=${refresh}`);
+        const url = cursor ? `/api/media?cursor=${cursor}` : '/api/media';
+        const res = await fetch(url);
         const data = await res.json();
         
-        loading.classList.add('hidden');
-        refreshIcon.style.animation = '';
-        
         if (data.error) {
-          container.innerHTML = `<p class="text-red-400">Error: ${data.error}</p>`;
+          loading.textContent = `Error: ${data.error}`;
           isLoading = false;
           return;
         }
         
-        totalComments = data.total;
-        hasMore = data.hasMore;
+        loading.classList.add('hidden');
+        nextCursor = data.nextCursor;
         
-        // Update count
-        document.getElementById('count').textContent = `${totalComments} unbeantwortet`;
+        // Load comments for each post
+        let foundAny = false;
+        for (const post of data.posts) {
+          const comments = await loadCommentsForPost(post);
+          if (comments.length > 0) {
+            foundAny = true;
+            for (const comment of comments) {
+              totalCount++;
+              const card = createCommentCard(comment, post);
+              container.appendChild(card);
+            }
+            updateCount();
+          }
+        }
         
-        // Update cache status
-        const cacheStatus = document.getElementById('cache-status');
-        if (data.cached) {
-          cacheStatus.textContent = '(cached)';
+        // Show load more if there are more posts
+        if (nextCursor) {
+          loadMoreDiv.classList.remove('hidden');
+          document.getElementById('load-more-btn').textContent = 'Ältere Posts laden...';
         } else {
-          cacheStatus.textContent = '';
+          loadMoreDiv.classList.add('hidden');
         }
         
-        if (data.comments.length === 0 && currentPage === 0) {
-          empty.classList.remove('hidden');
-          isLoading = false;
-          return;
-        }
-        
-        // Render comments
-        for (const comment of data.comments) {
-          const card = createCommentCard(comment);
-          container.appendChild(card);
-        }
-        
-        // Show load more button if there are more
-        if (hasMore) {
-          loadMoreBtn.classList.remove('hidden');
+        // Show empty if nothing found and no more to load
+        if (totalCount === 0 && !nextCursor) {
+          document.getElementById('empty').classList.remove('hidden');
         }
         
       } catch (err) {
-        loading.classList.add('hidden');
-        container.innerHTML = `<p class="text-red-400">Error: ${err.message}</p>`;
+        loading.textContent = `Error: ${err.message}`;
       }
       
       isLoading = false;
     }
     
-    function loadMore() {
-      currentPage++;
-      loadComments(false);
+    async function loadCommentsForPost(post) {
+      try {
+        const res = await fetch(`/api/comments/${post.id}`);
+        const data = await res.json();
+        return data.comments || [];
+      } catch (err) {
+        console.error('Failed to load comments for post', post.id, err);
+        return [];
+      }
     }
     
-    function createCommentCard(comment) {
+    function loadMorePosts() {
+      if (nextCursor) {
+        loadPosts(nextCursor);
+      }
+    }
+    
+    function refresh() {
+      document.getElementById('comments').innerHTML = '';
+      document.getElementById('empty').classList.add('hidden');
+      totalCount = 0;
+      nextCursor = null;
+      updateCount();
+      loadPosts();
+    }
+    
+    function updateCount() {
+      const countEl = document.getElementById('count');
+      countEl.textContent = totalCount > 0 ? `${totalCount} unbeantwortet` : '';
+    }
+    
+    function createCommentCard(comment, post) {
       const card = document.createElement('div');
       card.className = 'comment-card bg-white/5 border border-white/10 rounded-lg p-4 flex gap-4';
       card.id = `comment-${comment.id}`;
@@ -144,9 +151,11 @@
         day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
       });
       
+      const thumbnail = post.thumbnail_url || post.media_url;
+      
       card.innerHTML = `
-        <a href="${comment.post.permalink}" target="_blank" class="flex-shrink-0">
-          <img src="${comment.post.thumbnail}" alt="" class="w-20 h-20 object-cover rounded" loading="lazy">
+        <a href="${post.permalink}" target="_blank" class="flex-shrink-0">
+          <img src="${thumbnail}" alt="" class="w-20 h-20 object-cover rounded" loading="lazy">
         </a>
         <div class="flex-1 min-w-0">
           <div class="flex items-start justify-between gap-2 mb-2">
@@ -154,7 +163,7 @@
               <span class="font-medium">@${comment.username}</span>
               <span class="text-neutral-500 text-sm ml-2">${date}</span>
             </div>
-            <a href="${comment.post.permalink}" target="_blank" class="text-neutral-500 hover:text-white text-sm">↗</a>
+            <a href="${post.permalink}" target="_blank" class="text-neutral-500 hover:text-white text-sm">↗</a>
           </div>
           <p class="text-neutral-300 mb-3">${escapeHtml(comment.text)}</p>
           <div class="flex gap-2">
@@ -174,7 +183,7 @@
             <button 
               onclick="markDone('${comment.id}')"
               class="px-3 py-2 text-neutral-500 hover:text-green-400 transition-colors"
-              title="Als erledigt markieren (ohne Antwort)"
+              title="Als erledigt markieren"
             >
               ✓
             </button>
@@ -210,8 +219,6 @@
         
         if (data.success) {
           markDone(commentId);
-          totalComments--;
-          document.getElementById('count').textContent = `${totalComments} unbeantwortet`;
         } else {
           alert('Fehler: ' + (data.error?.message || JSON.stringify(data.error) || 'Unbekannt'));
           input.disabled = false;
@@ -228,19 +235,19 @@
         card.classList.add('replied');
         setTimeout(() => {
           card.classList.add('hidden');
-          totalComments--;
-          document.getElementById('count').textContent = `${totalComments} unbeantwortet`;
+          totalCount--;
+          updateCount();
+          
+          // Check if all done
+          if (totalCount === 0 && !nextCursor) {
+            document.getElementById('empty').classList.remove('hidden');
+          }
         }, 300);
       }
     }
     
-    // Add spin animation
-    const style = document.createElement('style');
-    style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
-    document.head.appendChild(style);
-    
-    // Load on start
-    loadComments();
+    // Start loading
+    loadPosts();
   </script>
 </body>
 </html>

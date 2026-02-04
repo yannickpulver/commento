@@ -8,13 +8,6 @@ app.use(express.static('public'));
 
 const { FB_APP_ID, FB_APP_SECRET, REDIRECT_URI, PORT } = process.env;
 
-// Simple in-memory cache (per-instance, resets on cold start)
-const cache = {
-  data: null,
-  timestamp: 0,
-  TTL: 5 * 60 * 1000 // 5 minutes
-};
-
 // Cookie helper
 function parseTokenCookie(req) {
   const cookies = req.headers.cookie || '';
@@ -88,10 +81,6 @@ app.get('/callback', async (req, res) => {
       page_id: pageId
     };
     
-    // Clear cache on new login
-    cache.data = null;
-    cache.timestamp = 0;
-    
     res.setHeader('Set-Cookie', `ig_token=${encodeURIComponent(JSON.stringify(tokenObj))}; Path=/; Max-Age=${60*24*60*60}; HttpOnly; SameSite=Lax`);
     res.redirect('/');
   } catch (err) {
@@ -99,80 +88,59 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-// API: Get unanswered comments with pagination
-app.get('/api/comments', async (req, res) => {
+// API: Get media list (paginated)
+app.get('/api/media', async (req, res) => {
   const token = parseTokenCookie(req);
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
   
-  const page = parseInt(req.query.page) || 0;
-  const limit = parseInt(req.query.limit) || 20;
-  const refresh = req.query.refresh === 'true';
+  const cursor = req.query.cursor || '';
+  const limit = 10;
   
   try {
-    let allComments;
-    
-    // Check cache (unless refresh requested)
-    if (!refresh && cache.data && (Date.now() - cache.timestamp) < cache.TTL) {
-      allComments = cache.data;
-    } else {
-      // Fetch fresh data
-      allComments = [];
-      
-      const mediaRes = await fetch(
-        `https://graph.facebook.com/v18.0/${token.instagram_id}/media?fields=id,caption,media_url,thumbnail_url,permalink,timestamp,media_type&limit=50&access_token=${token.access_token}`
-      );
-      const mediaData = await mediaRes.json();
-      
-      if (mediaData.error) {
-        return res.status(400).json(mediaData);
-      }
-      
-      for (const post of mediaData.data || []) {
-        const commentsRes = await fetch(
-          `https://graph.facebook.com/v18.0/${post.id}/comments?fields=id,text,username,timestamp,replies{id,text,username}&limit=100&access_token=${token.access_token}`
-        );
-        const commentsData = await commentsRes.json();
-        
-        const unanswered = (commentsData.data || []).filter(comment => {
-          if (!comment.replies || !comment.replies.data || comment.replies.data.length === 0) {
-            return true;
-          }
-          return false;
-        });
-        
-        for (const comment of unanswered) {
-          allComments.push({
-            ...comment,
-            post: {
-              id: post.id,
-              thumbnail: post.thumbnail_url || post.media_url,
-              permalink: post.permalink,
-              timestamp: post.timestamp
-            }
-          });
-        }
-      }
-      
-      // Sort by newest first
-      allComments.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-      
-      // Update cache
-      cache.data = allComments;
-      cache.timestamp = Date.now();
+    let url = `https://graph.facebook.com/v18.0/${token.instagram_id}/media?fields=id,caption,media_url,thumbnail_url,permalink,timestamp,media_type&limit=${limit}&access_token=${token.access_token}`;
+    if (cursor) {
+      url += `&after=${cursor}`;
     }
     
-    // Paginate
-    const start = page * limit;
-    const end = start + limit;
-    const pageComments = allComments.slice(start, end);
+    const mediaRes = await fetch(url);
+    const mediaData = await mediaRes.json();
+    
+    if (mediaData.error) {
+      return res.status(400).json(mediaData);
+    }
     
     res.json({
-      comments: pageComments,
-      total: allComments.length,
-      page,
-      hasMore: end < allComments.length,
-      cached: !refresh && cache.timestamp > 0
+      posts: mediaData.data || [],
+      nextCursor: mediaData.paging?.cursors?.after || null
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Get comments for a single post
+app.get('/api/comments/:postId', async (req, res) => {
+  const token = parseTokenCookie(req);
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+  
+  const { postId } = req.params;
+  
+  try {
+    const commentsRes = await fetch(
+      `https://graph.facebook.com/v18.0/${postId}/comments?fields=id,text,username,timestamp,replies{id,text,username}&limit=100&access_token=${token.access_token}`
+    );
+    const commentsData = await commentsRes.json();
+    
+    if (commentsData.error) {
+      return res.status(400).json(commentsData);
+    }
+    
+    // Filter unanswered only
+    const unanswered = (commentsData.data || []).filter(comment => {
+      return !comment.replies || !comment.replies.data || comment.replies.data.length === 0;
+    });
+    
+    res.json({ comments: unanswered });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -203,11 +171,6 @@ app.post('/api/reply', async (req, res) => {
       return res.status(400).json(replyData);
     }
     
-    // Remove from cache
-    if (cache.data) {
-      cache.data = cache.data.filter(c => c.id !== comment_id);
-    }
-    
     res.json({ success: true, id: replyData.id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -226,12 +189,10 @@ app.get('/api/status', (req, res) => {
 // Logout
 app.get('/logout', (req, res) => {
   res.setHeader('Set-Cookie', 'ig_token=; Path=/; Max-Age=0');
-  cache.data = null;
-  cache.timestamp = 0;
   res.redirect('/');
 });
 
 const port = PORT || 3000;
 app.listen(port, () => {
-  console.log(`\n🦞 Instagram Dashboard running at http://localhost:${port}\n`);
+  console.log(`\n🦞 Commento running at http://localhost:${port}\n`);
 });

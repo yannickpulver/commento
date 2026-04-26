@@ -38,6 +38,10 @@
       <h1 class="text-lg sm:text-xl font-medium">📸 Commento</h1>
       <span id="count" class="text-xs sm:text-sm text-neutral-500"></span>
     </div>
+    <nav class="flex items-center gap-1 text-xs sm:text-sm">
+      <a href="/" onclick="localStorage.setItem('commento_view','inbox')" class="px-2 py-1 rounded bg-white/10 text-white">📥 Inbox</a>
+      <a href="/picker.html" onclick="localStorage.setItem('commento_view','picker')" class="px-2 py-1 rounded text-neutral-400 hover:text-white">🔎 Picker</a>
+    </nav>
     <div class="flex items-center gap-2 sm:gap-4">
       <button onclick="refresh()" class="p-2 text-neutral-400 hover:text-white" title="Refresh">
         🔄
@@ -73,6 +77,11 @@
   </main>
 
   <script>
+    // Auto-switch to picker if user previously chose it
+    if (localStorage.getItem('commento_view') === 'picker') {
+      window.location.replace('/picker.html');
+    }
+
     let nextCursor = null;
     let totalCount = 0;
     let isLoading = false;

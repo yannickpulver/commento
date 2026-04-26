@@ -119,30 +119,64 @@ app.get('/api/media', async (req, res) => {
 });
 
 // API: Get comments for a single post
+// ?all=1 returns every comment (paginated through all pages, capped at 2000); default = unanswered only, first page
 app.get('/api/comments/:postId', async (req, res) => {
   const token = parseTokenCookie(req);
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
-  
+
   const { postId } = req.params;
-  
+  const fetchAll = req.query.all === '1';
+
   try {
-    const commentsRes = await fetch(
-      `https://graph.facebook.com/v18.0/${postId}/comments?fields=id,text,username,timestamp,replies{id,text,username}&limit=100&access_token=${token.access_token}`
-    );
-    const commentsData = await commentsRes.json();
-    
-    if (commentsData.error) {
-      return res.status(400).json(commentsData);
+    let url = `https://graph.facebook.com/v18.0/${postId}/comments?fields=id,text,username,timestamp,replies{id,text,username}&limit=100&access_token=${token.access_token}`;
+    let collected = [];
+    const MAX = 2000;
+
+    while (url && collected.length < MAX) {
+      const r = await fetch(url);
+      const d = await r.json();
+      if (d.error) return res.status(400).json(d);
+      collected = collected.concat(d.data || []);
+      url = fetchAll ? d.paging?.next : null;
     }
-    
-    // Filter unanswered only
-    const unanswered = (commentsData.data || []).filter(comment => {
-      return !comment.replies || !comment.replies.data || comment.replies.data.length === 0;
-    });
-    
-    res.json({ comments: unanswered });
+
+    if (!fetchAll) {
+      // Inbox mode: filter unanswered only
+      collected = collected.filter(c => !c.replies || !c.replies.data || c.replies.data.length === 0);
+    }
+
+    res.json({ comments: collected });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Follower count via Instagram business_discovery (only works for business/creator accounts)
+app.get('/api/follower/:username', async (req, res) => {
+  const token = parseTokenCookie(req);
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+  const { username } = req.params;
+
+  try {
+    const url = `https://graph.facebook.com/v18.0/${token.instagram_id}?fields=business_discovery.username(${encodeURIComponent(username)}){followers_count,name,profile_picture_url}&access_token=${token.access_token}`;
+    const r = await fetch(url);
+    const d = await r.json();
+
+    res.set('Cache-Control', 'public, max-age=3600');
+
+    if (d.error || !d.business_discovery) {
+      return res.json({ username, followers_count: null });
+    }
+
+    res.json({
+      username,
+      followers_count: d.business_discovery.followers_count ?? null,
+      name: d.business_discovery.name || null,
+      profile_picture_url: d.business_discovery.profile_picture_url || null
+    });
+  } catch (err) {
+    res.json({ username, followers_count: null });
   }
 });
 

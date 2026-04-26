@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Commento – Picker</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔎</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } }
+  </script>
+  <style>
+    .winner { animation: pop 0.4s ease; box-shadow: 0 0 0 2px #fcaf45; }
+    @keyframes pop { 0% { transform: scale(1); } 50% { transform: scale(1.03); } 100% { transform: scale(1); } }
+  </style>
+</head>
+<body class="bg-neutral-950 text-white min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-white/10 px-4 py-3 flex items-center justify-between sticky top-0 bg-neutral-950/95 backdrop-blur-sm z-10">
+    <div class="flex items-center gap-2 sm:gap-4">
+      <h1 class="text-lg sm:text-xl font-medium">🔎 Commento</h1>
+      <span id="status" class="text-xs sm:text-sm text-neutral-500"></span>
+    </div>
+    <nav class="flex items-center gap-1 text-xs sm:text-sm">
+      <a href="/" onclick="localStorage.setItem('commento_view','inbox')" class="px-2 py-1 rounded text-neutral-400 hover:text-white">📥 Inbox</a>
+      <a href="/picker.html" onclick="localStorage.setItem('commento_view','picker')" class="px-2 py-1 rounded bg-white/10 text-white">🔎 Picker</a>
+    </nav>
+    <div class="flex items-center gap-2 sm:gap-4">
+      <a href="/logout" class="text-xs sm:text-sm text-neutral-400 hover:text-white">Logout</a>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto p-3 sm:p-6">
+
+    <!-- Section A: Post Grid -->
+    <section id="grid-view">
+      <h2 class="text-sm text-neutral-400 mb-3">Pick a post to analyze its comments</h2>
+      <div id="grid-loading" class="text-center py-8 text-neutral-500">Loading posts...</div>
+      <div id="grid" class="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3"></div>
+      <div id="grid-load-more" class="text-center py-6 hidden">
+        <button onclick="loadMorePosts()" id="grid-load-more-btn" class="px-5 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors">
+          Load older posts...
+        </button>
+      </div>
+    </section>
+
+    <!-- Section B: Post Detail -->
+    <section id="detail-view" class="hidden">
+      <button onclick="showGrid()" class="mb-4 text-sm text-neutral-400 hover:text-white">← Back to posts</button>
+
+      <div class="flex gap-3 sm:gap-4 mb-4">
+        <a id="detail-link" href="#" target="_blank" class="flex-shrink-0">
+          <img id="detail-thumb" src="" alt="" class="w-20 h-20 sm:w-24 sm:h-24 object-cover rounded">
+        </a>
+        <div class="flex-1 min-w-0">
+          <p id="detail-caption" class="text-sm text-neutral-300 mb-1"></p>
+          <p id="detail-meta" class="text-xs text-neutral-500"></p>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <input
+          id="filter-input"
+          type="text"
+          placeholder="Filter by word (e.g. yes)"
+          oninput="renderList()"
+          class="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-sm focus:outline-none focus:border-white/30"
+        >
+      </div>
+
+      <div class="flex items-center justify-between mb-3 text-xs text-neutral-500">
+        <span id="counts"></span>
+        <button id="random-btn" onclick="pickRandom()" class="px-3 py-1 bg-white/10 hover:bg-white/20 rounded text-white hidden" title="Pick random user">🎲 Random</button>
+      </div>
+
+      <div id="list-loading" class="text-center py-8 text-neutral-500">Loading comments...</div>
+      <div id="list" class="space-y-2"></div>
+      <div id="list-empty" class="text-center py-8 text-neutral-500 hidden">No matches.</div>
+    </section>
+
+    <footer class="text-center py-8 text-neutral-600 text-xs">
+      by <a href="https://yannickpulver.dev" target="_blank" class="hover:text-neutral-400 transition-colors">yannickpulver</a>
+    </footer>
+  </main>
+
+  <script>
+    // State
+    let nextCursor = null;
+    let isLoadingPosts = false;
+    let allComments = [];          // all comments for selected post
+    const followerCache = new Map(); // username -> { followers_count, profile_picture_url }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text || '';
+      return div.innerHTML;
+    }
+
+    function fmtFollowers(n) {
+      if (n == null) return '—';
+      if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+      if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+      return String(n);
+    }
+
+    // ---------- GRID VIEW ----------
+    async function loadPosts(cursor = null) {
+      if (isLoadingPosts) return;
+      isLoadingPosts = true;
+
+      try {
+        const url = cursor ? `/api/media?cursor=${cursor}` : '/api/media';
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.error) {
+          document.getElementById('grid-loading').textContent = 'Error: ' + JSON.stringify(data.error);
+          isLoadingPosts = false;
+          return;
+        }
+
+        nextCursor = data.nextCursor;
+        document.getElementById('grid-loading').classList.add('hidden');
+
+        const grid = document.getElementById('grid');
+        for (const post of data.posts) {
+          grid.appendChild(createGridTile(post));
+        }
+
+        const loadMore = document.getElementById('grid-load-more');
+        if (nextCursor) {
+          loadMore.classList.remove('hidden');
+          document.getElementById('grid-load-more-btn').textContent = 'Load older posts...';
+        } else {
+          loadMore.classList.add('hidden');
+        }
+      } catch (err) {
+        document.getElementById('grid-loading').textContent = 'Error: ' + err.message;
+      }
+
+      isLoadingPosts = false;
+    }
+
+    function createGridTile(post) {
+      const tile = document.createElement('button');
+      tile.className = 'group relative aspect-square overflow-hidden rounded bg-white/5 hover:ring-2 hover:ring-white/40 transition';
+      tile.onclick = () => selectPost(post);
+      const thumb = post.thumbnail_url || post.media_url;
+      tile.innerHTML = `
+        <img src="${thumb}" alt="" class="w-full h-full object-cover" loading="lazy">
+        <div class="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 to-transparent text-left">
+          <p class="text-[10px] sm:text-xs text-white/90 line-clamp-2">${escapeHtml((post.caption || '').slice(0, 80))}</p>
+        </div>
+      `;
+      return tile;
+    }
+
+    function loadMorePosts() {
+      if (nextCursor) loadPosts(nextCursor);
+    }
+
+    // ---------- DETAIL VIEW ----------
+    async function selectPost(post) {
+      document.getElementById('grid-view').classList.add('hidden');
+      document.getElementById('detail-view').classList.remove('hidden');
+      window.scrollTo(0, 0);
+
+      const thumb = post.thumbnail_url || post.media_url;
+      document.getElementById('detail-thumb').src = thumb;
+      document.getElementById('detail-link').href = post.permalink;
+      document.getElementById('detail-caption').textContent = post.caption || '(no caption)';
+      document.getElementById('detail-meta').textContent = new Date(post.timestamp).toLocaleString();
+
+      document.getElementById('filter-input').value = '';
+      document.getElementById('list').innerHTML = '';
+      document.getElementById('list-empty').classList.add('hidden');
+      document.getElementById('list-loading').classList.remove('hidden');
+      document.getElementById('random-btn').classList.add('hidden');
+      document.getElementById('counts').textContent = '';
+
+      try {
+        const res = await fetch(`/api/comments/${post.id}?all=1`);
+        const data = await res.json();
+        allComments = data.comments || [];
+        document.getElementById('list-loading').classList.add('hidden');
+        renderList();
+        prefetchFollowers();
+      } catch (err) {
+        document.getElementById('list-loading').textContent = 'Error: ' + err.message;
+      }
+    }
+
+    function showGrid() {
+      document.getElementById('detail-view').classList.add('hidden');
+      document.getElementById('grid-view').classList.remove('hidden');
+      allComments = [];
+    }
+
+    // Build deduplicated user list from currently-filtered comments.
+    // Per user: keep their FIRST matching comment (chronologically earliest).
+    function buildFilteredUsers() {
+      const filter = document.getElementById('filter-input').value.trim().toLowerCase();
+      const matches = filter
+        ? allComments.filter(c => (c.text || '').toLowerCase().includes(filter))
+        : allComments;
+
+      const byUser = new Map();
+      // sort ascending by timestamp so first occurrence wins
+      const sorted = [...matches].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      for (const c of sorted) {
+        if (!byUser.has(c.username)) byUser.set(c.username, c);
+      }
+      return { users: [...byUser.values()], totalMatches: matches.length };
+    }
+
+    function renderList() {
+      const { users, totalMatches } = buildFilteredUsers();
+      const list = document.getElementById('list');
+      const empty = document.getElementById('list-empty');
+      const randomBtn = document.getElementById('random-btn');
+
+      document.getElementById('counts').textContent =
+        `${totalMatches} match${totalMatches === 1 ? '' : 'es'} • ${users.length} unique user${users.length === 1 ? '' : 's'} (${allComments.length} total)`;
+
+      list.innerHTML = '';
+      if (users.length === 0) {
+        empty.classList.remove('hidden');
+        randomBtn.classList.add('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+      randomBtn.classList.toggle('hidden', users.length < 2);
+
+      for (const c of users) {
+        list.appendChild(createUserRow(c));
+      }
+    }
+
+    function createUserRow(comment) {
+      const row = document.createElement('div');
+      row.className = 'bg-white/5 border border-white/10 rounded-lg p-3 flex gap-3';
+      row.dataset.username = comment.username;
+      const cached = followerCache.get(comment.username);
+      const followerHtml = cached
+        ? `<span class="text-xs text-neutral-400">${fmtFollowers(cached.followers_count)} followers</span>`
+        : `<span class="text-xs text-neutral-600 follower-slot">…</span>`;
+
+      row.innerHTML = `
+        <img src="/api/avatar/${encodeURIComponent(comment.username)}" alt="" class="w-10 h-10 rounded-full flex-shrink-0">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <a href="https://instagram.com/${encodeURIComponent(comment.username)}" target="_blank" class="font-medium text-sm hover:underline">@${escapeHtml(comment.username)}</a>
+            ${followerHtml}
+            <span class="text-neutral-500 text-xs ml-auto">${new Date(comment.timestamp).toLocaleDateString()}</span>
+          </div>
+          <p class="text-neutral-300 text-sm mt-1 break-words">${escapeHtml(comment.text)}</p>
+        </div>
+      `;
+      return row;
+    }
+
+    // Fetch follower counts with concurrency limit
+    async function prefetchFollowers() {
+      const { users } = buildFilteredUsers();
+      const allUsernames = [...new Set(allComments.map(c => c.username))];
+      // prioritize currently-visible filtered users first, then the rest
+      const visible = users.map(u => u.username);
+      const queue = [...visible, ...allUsernames.filter(u => !visible.includes(u))]
+        .filter(u => !followerCache.has(u));
+
+      const CONCURRENCY = 5;
+      let i = 0;
+      const workers = Array.from({ length: CONCURRENCY }, async () => {
+        while (i < queue.length) {
+          const username = queue[i++];
+          try {
+            const r = await fetch(`/api/follower/${encodeURIComponent(username)}`);
+            const d = await r.json();
+            followerCache.set(username, { followers_count: d.followers_count });
+            updateUserRow(username);
+          } catch {
+            followerCache.set(username, { followers_count: null });
+            updateUserRow(username);
+          }
+        }
+      });
+      await Promise.all(workers);
+    }
+
+    function updateUserRow(username) {
+      const row = document.querySelector(`[data-username="${CSS.escape(username)}"]`);
+      if (!row) return;
+      const slot = row.querySelector('.follower-slot');
+      if (!slot) return;
+      const cached = followerCache.get(username);
+      slot.outerHTML = `<span class="text-xs text-neutral-400">${fmtFollowers(cached?.followers_count)} followers</span>`;
+    }
+
+    function pickRandom() {
+      const { users } = buildFilteredUsers();
+      if (users.length === 0) return;
+      const winner = users[Math.floor(Math.random() * users.length)];
+      document.querySelectorAll('#list .winner').forEach(el => el.classList.remove('winner'));
+      const row = document.querySelector(`[data-username="${CSS.escape(winner.username)}"]`);
+      if (row) {
+        row.classList.add('winner');
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
+    // Boot
+    loadPosts();
+  </script>
+</body>
+</html>

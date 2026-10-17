@@ -92,19 +92,11 @@
     let nextCursor = null;
     let isLoadingPosts = false;
     let allComments = [];          // all comments for selected post
-    const followerCache = new Map(); // username -> { followers_count, profile_picture_url }
 
     function escapeHtml(text) {
       const div = document.createElement('div');
       div.textContent = text || '';
       return div.innerHTML;
-    }
-
-    function fmtFollowers(n) {
-      if (n == null) return '—';
-      if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
-      if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
-      return String(n);
     }
 
     // ---------- GRID VIEW ----------
@@ -188,7 +180,6 @@
         allComments = data.comments || [];
         document.getElementById('list-loading').classList.add('hidden');
         renderList();
-        prefetchFollowers();
       } catch (err) {
         document.getElementById('list-loading').textContent = 'Error: ' + err.message;
       }
@@ -244,60 +235,17 @@
       const row = document.createElement('div');
       row.className = 'bg-white/5 border border-white/10 rounded-lg p-3 flex gap-3';
       row.dataset.username = comment.username;
-      const cached = followerCache.get(comment.username);
-      const followerHtml = cached
-        ? `<span class="text-xs text-neutral-400">${fmtFollowers(cached.followers_count)} followers</span>`
-        : `<span class="text-xs text-neutral-600 follower-slot">…</span>`;
-
       row.innerHTML = `
         <img src="/api/avatar/${encodeURIComponent(comment.username)}" alt="" class="w-10 h-10 rounded-full flex-shrink-0">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
             <a href="https://instagram.com/${encodeURIComponent(comment.username)}" target="_blank" class="font-medium text-sm hover:underline">@${escapeHtml(comment.username)}</a>
-            ${followerHtml}
             <span class="text-neutral-500 text-xs ml-auto">${new Date(comment.timestamp).toLocaleDateString()}</span>
           </div>
           <p class="text-neutral-300 text-sm mt-1 break-words">${escapeHtml(comment.text)}</p>
         </div>
       `;
       return row;
-    }
-
-    // Fetch follower counts with concurrency limit
-    async function prefetchFollowers() {
-      const { users } = buildFilteredUsers();
-      const allUsernames = [...new Set(allComments.map(c => c.username))];
-      // prioritize currently-visible filtered users first, then the rest
-      const visible = users.map(u => u.username);
-      const queue = [...visible, ...allUsernames.filter(u => !visible.includes(u))]
-        .filter(u => !followerCache.has(u));
-
-      const CONCURRENCY = 5;
-      let i = 0;
-      const workers = Array.from({ length: CONCURRENCY }, async () => {
-        while (i < queue.length) {
-          const username = queue[i++];
-          try {
-            const r = await fetch(`/api/follower/${encodeURIComponent(username)}`);
-            const d = await r.json();
-            followerCache.set(username, { followers_count: d.followers_count });
-            updateUserRow(username);
-          } catch {
-            followerCache.set(username, { followers_count: null });
-            updateUserRow(username);
-          }
-        }
-      });
-      await Promise.all(workers);
-    }
-
-    function updateUserRow(username) {
-      const row = document.querySelector(`[data-username="${CSS.escape(username)}"]`);
-      if (!row) return;
-      const slot = row.querySelector('.follower-slot');
-      if (!slot) return;
-      const cached = followerCache.get(username);
-      slot.outerHTML = `<span class="text-xs text-neutral-400">${fmtFollowers(cached?.followers_count)} followers</span>`;
     }
 
     function pickRandom() {

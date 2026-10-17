@@ -116,6 +116,11 @@ app.get('/api/media', async (req, res) => {
   }
 });
 
+// Instagram Login sometimes leaves `username` empty; `from.username` has it then
+function withUsername(c) {
+  return { ...c, username: c.username || c.from?.username || 'unknown' };
+}
+
 // API: Get comments for a single post
 // ?all=1 returns every comment (paginated through all pages, capped at 2000); default = unanswered only, first page
 app.get('/api/comments/:postId', async (req, res) => {
@@ -126,7 +131,7 @@ app.get('/api/comments/:postId', async (req, res) => {
   const fetchAll = req.query.all === '1';
 
   try {
-    let url = `${API}/${postId}/comments?fields=id,text,username,timestamp,replies{id,text,username}&limit=100&access_token=${token.access_token}`;
+    let url = `${API}/${postId}/comments?fields=id,text,username,from{username},timestamp,replies{id,text,username,from{username}}&limit=100&access_token=${token.access_token}`;
     let collected = [];
     const MAX = 2000;
 
@@ -134,7 +139,7 @@ app.get('/api/comments/:postId', async (req, res) => {
       const r = await fetch(url);
       const d = await r.json();
       if (d.error) return res.status(400).json(d);
-      collected = collected.concat(d.data || []);
+      collected = collected.concat((d.data || []).map(withUsername));
       url = fetchAll ? d.paging?.next : null;
     }
 

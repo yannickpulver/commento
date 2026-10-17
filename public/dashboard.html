@@ -264,7 +264,7 @@
     }
     
     function getInitials(username) {
-      return username.substring(0, 2).toUpperCase();
+      return (username || '?').substring(0, 2).toUpperCase();
     }
     
     function createCommentCard(comment, post) {

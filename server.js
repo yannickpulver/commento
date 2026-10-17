@@ -121,6 +121,16 @@ function withUsername(c) {
   return { ...c, username: c.username || c.from?.username || 'unknown' };
 }
 
+// Nested replies come without username; looks them up in batches of 50
+async function fillUnknownUsernames(comments, token) {
+  const unknown = comments.filter(c => c.username === 'unknown');
+  for (let i = 0; i < unknown.length; i += 50) {
+    const chunk = unknown.slice(i, i + 50);
+    const d = await (await fetch(`${API}/?ids=${chunk.map(c => c.id).join(',')}&fields=username,from{username}&access_token=${token.access_token}`)).json();
+    for (const c of chunk) c.username = d[c.id]?.username || d[c.id]?.from?.username || 'unknown';
+  }
+}
+
 // Own username per token, to tell which thread messages are mine
 const ownUsernames = new Map();
 async function ownUsername(token) {
@@ -143,7 +153,8 @@ function toThreads(comments) {
     }
     const t = thread(c.id);
     t.root = c;
-    for (const r of c.replies?.data || []) t.replies.set(r.id, withUsername(r));
+    // The flat copy of a reply has the username, the nested one doesn't
+    for (const r of c.replies?.data || []) if (!t.replies.has(r.id)) t.replies.set(r.id, withUsername(r));
   }
   return [...threads.values()].map(t => {
     const replies = [...t.replies.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
@@ -174,11 +185,15 @@ app.get('/api/comments/:postId', async (req, res) => {
     }
 
     if (req.query.all === '1') {
-      return res.json({ comments: collected.filter(c => !c.parent_id) });
+      const comments = collected.filter(c => !c.parent_id);
+      await fillUnknownUsernames(comments, token);
+      return res.json({ comments });
     }
 
     const me = await ownUsername(token);
-    const threads = toThreads(collected).filter(t => t.last.username !== me);
+    const all = toThreads(collected);
+    await fillUnknownUsernames(all.flatMap(t => [t.root, ...t.replies]), token);
+    const threads = all.filter(t => t.last.username !== me);
     res.json({ me, threads });
   } catch (err) {
     res.status(500).json({ error: err.message });

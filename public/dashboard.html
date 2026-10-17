@@ -183,14 +183,14 @@
             showLoading(`Checking post ${i + 1}/${data.posts.length}: "${caption}"`);
           }
           
-          const comments = await loadCommentsForPost(post);
-          if (comments.length > 0) {
-            for (const comment of comments) {
-              if (isDismissed(comment.id)) continue;
+          const { me, threads } = await loadThreadsForPost(post);
+          if (threads.length > 0) {
+            for (const thread of threads) {
+              if (isDismissed(thread.last.id)) continue;
               
               totalCount++;
               foundAny = true;
-              const card = createCommentCard(comment, post);
+              const card = createThreadCard(thread, post, me);
               container.appendChild(card);
             }
             updateCount();
@@ -231,14 +231,14 @@
       isLoading = false;
     }
     
-    async function loadCommentsForPost(post) {
+    async function loadThreadsForPost(post) {
       try {
         const res = await fetch(`/api/comments/${post.id}`);
         const data = await res.json();
-        return data.comments || [];
+        return { me: data.me, threads: data.threads || [] };
       } catch (err) {
         console.error('Failed to load comments for post', post.id, err);
-        return [];
+        return { threads: [] };
       }
     }
     
@@ -267,14 +267,35 @@
       return (username || '?').substring(0, 2).toUpperCase();
     }
     
-    function createCommentCard(comment, post) {
-      const card = document.createElement('div');
-      card.className = 'comment-card bg-white/5 border border-white/10 rounded-lg p-3 sm:p-4';
-      card.id = `comment-${comment.id}`;
-      
-      const date = new Date(comment.timestamp).toLocaleDateString('en-US', {
+    function formatDate(timestamp) {
+      return new Date(timestamp).toLocaleDateString('en-US', {
         day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
       });
+    }
+
+    function createReplyRow(reply, me) {
+      const mine = reply.username === me;
+      return `
+        <div class="border-l-2 ${mine ? 'border-white/30' : 'border-white/10'} pl-3 mt-2">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-medium text-xs ${mine ? 'text-neutral-400' : ''}">@${escapeHtml(reply.username)}</span>
+            <span class="text-neutral-500 text-xs">${formatDate(reply.timestamp)}</span>
+          </div>
+          <p class="text-neutral-300 text-sm break-words">${escapeHtml(reply.text)}</p>
+        </div>
+      `;
+    }
+
+    function createThreadCard(thread, post, me) {
+      const comment = thread.root;
+      // Reply goes to the top-level comment and mentions whoever wrote last
+      const mention = thread.last.username;
+      const card = document.createElement('div');
+      card.className = 'comment-card bg-white/5 border border-white/10 rounded-lg p-3 sm:p-4';
+      card.id = `comment-${thread.id}`;
+      card.dataset.last = thread.last.id;
+      
+      const date = formatDate(comment.timestamp);
       
       const thumbnail = post.thumbnail_url || post.media_url;
       const avatarUrl = `/api/avatar/${comment.username}`;
@@ -310,26 +331,28 @@
                 </div>
               </div>
               <button 
-                onclick="markDone('${comment.id}')"
+                onclick="markDone('${thread.id}')"
                 class="text-neutral-500 hover:text-red-400 transition-colors p-1"
                 title="Dismiss"
               >✕</button>
             </div>
             
             <!-- Comment Text -->
-            <p class="text-neutral-300 text-sm mb-3 break-words">${escapeHtml(comment.text)}</p>
+            <p class="text-neutral-300 text-sm break-words">${escapeHtml(comment.text)}</p>
+            ${thread.replies.map(r => createReplyRow(r, me)).join('')}
+            <div class="mb-3"></div>
             
             <!-- Reply Input -->
             <div class="flex gap-2">
               <input 
                 type="text" 
-                id="reply-${comment.id}" 
+                id="reply-${thread.id}" 
                 placeholder="Reply..."
                 class="flex-1 min-w-0 bg-white/5 border border-white/10 rounded px-3 py-2 text-sm focus:outline-none focus:border-white/30"
-                onkeydown="if(event.key==='Enter') sendReply('${comment.id}', '${comment.username}')"
+                onkeydown="if(event.key==='Enter') sendReply('${thread.id}', '${mention}')"
               >
               <button 
-                onclick="sendReply('${comment.id}', '${comment.username}')"
+                onclick="sendReply('${thread.id}', '${mention}')"
                 class="px-3 sm:px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-sm transition-colors flex-shrink-0"
               >
                 <span class="hidden sm:inline">Send</span>
@@ -338,7 +361,7 @@
             </div>
             
             <!-- Sending indicator -->
-            <div id="sending-${comment.id}" class="sending-badge text-xs text-neutral-500 mt-2 hidden">
+            <div id="sending-${thread.id}" class="sending-badge text-xs text-neutral-500 mt-2 hidden">
               ⏳ Sending...
             </div>
           </div>
@@ -416,7 +439,7 @@
     function markDone(commentId) {
       const card = document.getElementById(`comment-${commentId}`);
       if (card) {
-        addDismissed(commentId);
+        addDismissed(card.dataset.last);
         
         card.classList.remove('sending');
         card.classList.add('replied');

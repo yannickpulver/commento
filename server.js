@@ -121,17 +121,47 @@ function withUsername(c) {
   return { ...c, username: c.username || c.from?.username || 'unknown' };
 }
 
+// Own username per token, to tell which thread messages are mine
+const ownUsernames = new Map();
+async function ownUsername(token) {
+  if (!ownUsernames.has(token.access_token)) {
+    const d = await (await fetch(`${API}/me?fields=username&access_token=${token.access_token}`)).json();
+    ownUsernames.set(token.access_token, d.username);
+  }
+  return ownUsernames.get(token.access_token);
+}
+
+// Groups comments into threads: top-level comment + replies, oldest first.
+// Replies come nested in `replies` or flat with `parent_id`.
+function toThreads(comments) {
+  const threads = new Map();
+  const thread = id => threads.get(id) || threads.set(id, { id, root: null, replies: new Map() }).get(id);
+  for (const c of comments) {
+    if (c.parent_id) {
+      thread(c.parent_id).replies.set(c.id, c);
+      continue;
+    }
+    const t = thread(c.id);
+    t.root = c;
+    for (const r of c.replies?.data || []) t.replies.set(r.id, withUsername(r));
+  }
+  return [...threads.values()].map(t => {
+    const replies = [...t.replies.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const root = t.root || replies.shift();
+    return { id: t.id, root, replies, last: replies.at(-1) || root };
+  });
+}
+
 // API: Get comments for a single post
-// ?all=1 returns every comment (paginated through all pages, capped at 2000); default = unanswered only, first page
+// Default: threads whose last message isn't mine (inbox). ?all=1: every top-level comment (picker)
 app.get('/api/comments/:postId', async (req, res) => {
   const token = parseTokenCookie(req);
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
 
   const { postId } = req.params;
-  const fetchAll = req.query.all === '1';
 
   try {
-    let url = `${API}/${postId}/comments?fields=id,text,username,from{username},timestamp,replies{id,text,username,from{username}}&limit=100&access_token=${token.access_token}`;
+    let url = `${API}/${postId}/comments?fields=id,text,username,from{username},timestamp,parent_id,replies{id,text,username,from{username},timestamp}&limit=100&access_token=${token.access_token}`;
     let collected = [];
     const MAX = 2000;
 
@@ -140,15 +170,16 @@ app.get('/api/comments/:postId', async (req, res) => {
       const d = await r.json();
       if (d.error) return res.status(400).json(d);
       collected = collected.concat((d.data || []).map(withUsername));
-      url = fetchAll ? d.paging?.next : null;
+      url = d.paging?.next;
     }
 
-    if (!fetchAll) {
-      // Inbox mode: filter unanswered only
-      collected = collected.filter(c => !c.replies || !c.replies.data || c.replies.data.length === 0);
+    if (req.query.all === '1') {
+      return res.json({ comments: collected.filter(c => !c.parent_id) });
     }
 
-    res.json({ comments: collected });
+    const me = await ownUsername(token);
+    const threads = toThreads(collected).filter(t => t.last.username !== me);
+    res.json({ me, threads });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -396,7 +396,7 @@
                 id="reply-${thread.id}"
                 placeholder="Reply to @${escapeHtml(mention)}..."
                 class="input"
-                onkeydown="if(event.key==='Enter') sendReply('${thread.id}', '${mention}')"
+                onkeydown="if(event.key==='Enter' && !event.isComposing && event.keyCode!==229) sendReply('${thread.id}', '${mention}')"
               >
               <button
                 onclick="sendReply('${thread.id}', '${mention}')"
